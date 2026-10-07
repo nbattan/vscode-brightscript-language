@@ -116,7 +116,8 @@ export class DeviceTargetManager {
             extraCandidates: [await this.context.workspaceState.get('remotePassword')]
         });
         if (resolution.status === 'unreachable') {
-            void vscode.window.showErrorMessage(`Device '${label}' is unreachable.`);
+            const detail = resolution.reason ? ` (${resolution.reason})` : '';
+            void vscode.window.showErrorMessage(`Device '${label}' is unreachable${detail}.`);
             return undefined;
         }
         if (resolution.status === 'cancelled') {

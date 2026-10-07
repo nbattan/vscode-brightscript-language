@@ -1163,6 +1163,49 @@ describe('DeviceManager', () => {
             const result = await manager.validateDevicePassword({ host: '192.168.1.100' }, 'rokudev');
             expect(result).to.equal('unreachable');
         });
+
+        describe('reporting why the device is unreachable', () => {
+            async function validateAndCollectReasons() {
+                const reasons: string[] = [];
+                const result = await manager.validateDevicePassword({ host: '127.0.0.1' }, 'rokudev', undefined, (reason) => reasons.push(reason));
+                return { result: result, reasons: reasons };
+            }
+
+            it('reports the underlying cause of a network failure, without repeating the host', async () => {
+                validateStub.rejects(new DeviceUnreachableError('Device 127.0.0.1 was unreachable: connect ECONNREFUSED 127.0.0.1:80', {}, new Error('connect ECONNREFUSED 127.0.0.1:80')));
+                const { result, reasons } = await validateAndCollectReasons();
+                expect(result).to.equal('unreachable');
+                expect(reasons).to.eql(['connect ECONNREFUSED 127.0.0.1:80']);
+            });
+
+            it('falls back to the error message when a network failure has no cause', async () => {
+                validateStub.rejects(new DeviceUnreachableError('offline'));
+                expect((await validateAndCollectReasons()).reasons).to.eql(['offline']);
+            });
+
+            it('reports the message of an unexpected response code', async () => {
+                validateStub.rejects(new InvalidDeviceResponseCodeError('Unexpected status 404 from device at 127.0.0.1'));
+                expect((await validateAndCollectReasons()).reasons).to.eql(['Unexpected status 404 from device at 127.0.0.1']);
+            });
+
+            it('reports the message of any other error, and tolerates a thrown non-error', async () => {
+                validateStub.rejects(new Error('something weird'));
+                expect((await validateAndCollectReasons()).reasons).to.eql(['something weird']);
+
+                const notAnError: any = 'plain string';
+                validateStub.callsFake(() => Promise.reject(notAnError));
+                expect((await validateAndCollectReasons()).reasons).to.eql(['plain string']);
+            });
+
+            it('does not call back when the device answered', async () => {
+                const reasons: string[] = [];
+                validateStub.resolves(true);
+                await manager.validateDevicePassword({ host: '127.0.0.1' }, 'rokudev', undefined, (reason) => reasons.push(reason));
+                validateStub.resolves(false);
+                await manager.validateDevicePassword({ host: '127.0.0.1' }, 'wrong', undefined, (reason) => reasons.push(reason));
+                expect(reasons).to.eql([]);
+            });
+        });
     });
 
     describe('removeDiscoveredDevice', () => {

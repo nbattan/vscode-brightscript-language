@@ -38,8 +38,15 @@ const scanForDevicesLabel = 'Scan for devices';
  */
 export type DevicePasswordResolution =
     | { status: 'ok'; password: string }
-    | { status: 'unreachable' }
+    | { status: 'unreachable'; reason?: string }
     | { status: 'cancelled' };
+
+/**
+ * Build an `unreachable` resolution. The `reason` key is only present when there is one.
+ */
+function unreachable(reason: string | undefined): DevicePasswordResolution {
+    return reason ? { status: 'unreachable', reason: reason } : { status: 'unreachable' };
+}
 
 export class UserInputManager {
 
@@ -97,8 +104,8 @@ export class UserInputManager {
      * `packagePort` is the port of the device's dev installer web server, for targets that don't use
      * the default (80), such as the BrightScript Simulator.
      *
-     * @returns `ok` with the accepted password, `unreachable` when the device can't be contacted,
-     *          or `cancelled` when the user dismisses the prompt.
+     * @returns `ok` with the accepted password, `unreachable` (with the `reason`, when known) when the
+     *          device can't be contacted, or `cancelled` when the user dismisses the prompt.
      */
     public async resolveDevicePassword(options: { device: DeviceConfig; serialNumber: string | undefined; extraCandidates?: Array<string | undefined>; packagePort?: number }): Promise<DevicePasswordResolution> {
         const { device, serialNumber, packagePort } = options;
@@ -107,13 +114,13 @@ export class UserInputManager {
         const candidates = await this.collectDevicePasswordCandidates(host, serialNumber, options.extraCandidates);
 
         for (const candidate of candidates) {
-            const validation = await this.deviceManager.validateDevicePassword(device, candidate, packagePort);
+            const { validation, reason } = await this.validatePassword(device, candidate, packagePort);
             if (validation === 'ok') {
                 await this.persistDevicePassword(serialNumber, candidate);
                 return { status: 'ok', password: candidate };
             }
             if (validation === 'unreachable') {
-                return { status: 'unreachable' };
+                return unreachable(reason);
             }
             // 'bad-password' — fall through to the next candidate
         }
@@ -128,16 +135,27 @@ export class UserInputManager {
             if (!value) {
                 return { status: 'cancelled' };
             }
-            const validation = await this.deviceManager.validateDevicePassword(device, value, packagePort);
+            const { validation, reason } = await this.validatePassword(device, value, packagePort);
             if (validation === 'ok') {
                 await this.persistDevicePassword(serialNumber, value);
                 return { status: 'ok', password: value };
             }
             if (validation === 'unreachable') {
-                return { status: 'unreachable' };
+                return unreachable(reason);
             }
             placeholder = 'The password was rejected by the device. Try again, or press Esc to cancel.';
         }
+    }
+
+    /**
+     * Validate one password and capture why the device was unreachable, if it was.
+     */
+    private async validatePassword(device: DeviceConfig, password: string, packagePort: number | undefined) {
+        const failure: { reason?: string } = {};
+        const validation = await this.deviceManager.validateDevicePassword(device, password, packagePort, (reason) => {
+            failure.reason = reason;
+        });
+        return { validation: validation, reason: failure.reason };
     }
 
     /**

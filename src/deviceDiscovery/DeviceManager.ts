@@ -781,13 +781,15 @@ export class DeviceManager {
      * Roku Cloud Emulator config).
      *
      * @param port  the port of the device's dev installer web server. Omit to use roku-deploy's default (80)
+     * @param onUnreachable  called with a short, human-readable cause (e.g. `connect ECONNREFUSED 127.0.0.1:80`)
+     *                       just before returning `'unreachable'`, so callers can tell the user why
      *
      * Returns:
      * - `'ok'` — credentials accepted
      * - `'bad-password'` — device reachable, credentials rejected
      * - `'unreachable'` — device could not be contacted (transient; don't treat as wrong password)
      */
-    public async validateDevicePassword(device: DeviceConfig, password: string, port?: number): Promise<PasswordValidationResult> {
+    public async validateDevicePassword(device: DeviceConfig, password: string, port?: number, onUnreachable?: (reason: string) => void): Promise<PasswordValidationResult> {
         try {
             const accepted = await rokuDeploy.validateDeveloperPassword({
                 device: device,
@@ -797,10 +799,9 @@ export class DeviceManager {
             });
             return accepted ? 'ok' : 'bad-password';
         } catch (e) {
-            if (e instanceof DeviceUnreachableError) {
-                return 'unreachable';
-            }
-            // Unexpected response code or any other failure — treat as unreachable so the caller retries/prompts rather than discarding credentials.
+            // A network failure, an unexpected response code, or any other failure — treat as unreachable so
+            // the caller retries/prompts rather than discarding credentials, but hand back the cause.
+            onUnreachable?.(describePasswordValidationFailure(e));
             return 'unreachable';
         }
     }
@@ -1707,6 +1708,18 @@ export class DeviceManager {
 export type DeviceState = 'offline' | 'unknown' | 'pending' | 'online';
 
 export type PasswordValidationResult = 'ok' | 'bad-password' | 'unreachable';
+
+/**
+ * A short, human-readable cause for a failed password validation. For a network failure, roku-deploy's
+ * message repeats the host ("Device 1.2.3.4 was unreachable: connect ECONNREFUSED 1.2.3.4:80"), so use
+ * the underlying cause on its own.
+ */
+function describePasswordValidationFailure(error: unknown): string {
+    if (error instanceof DeviceUnreachableError && error.cause?.message) {
+        return error.cause.message;
+    }
+    return error instanceof Error ? error.message : String(error);
+}
 
 export type ConfigurationScope = 'user' | 'workspace' | 'rokuDevConfig';
 

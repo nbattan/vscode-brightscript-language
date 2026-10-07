@@ -824,7 +824,8 @@ export class BrightScriptDebugConfigurationProvider implements DebugConfiguratio
             packagePort: packagePort
         });
         if (resolution.status === 'unreachable') {
-            throw new Error(`Debug session terminated: device '${this.describeDevice(device)}' is unreachable.`);
+            const detail = resolution.reason ? ` (${resolution.reason})` : '';
+            throw new Error(`Debug session terminated: device '${this.describeDevice(device)}' is unreachable${detail}.`);
         }
         if (resolution.status === 'cancelled') {
             throw new Error('Debug session terminated: password is required.');

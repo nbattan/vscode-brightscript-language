@@ -535,7 +535,7 @@ describe('UserInputManager', () => {
 
             await userInputManager.resolveDevicePassword({ device: { host: '127.0.0.1' }, serialNumber: 'SN-001', extraCandidates: ['some-pw'], packagePort: 8084 });
 
-            expect(stub.firstCall.args).to.eql([{ host: '127.0.0.1' }, 'some-pw', 8084]);
+            expect(stub.firstCall.args.slice(0, 3)).to.eql([{ host: '127.0.0.1' }, 'some-pw', 8084]);
         });
 
         it('moves past bad-password candidates and uses the first accepted one', async () => {
@@ -558,6 +558,30 @@ describe('UserInputManager', () => {
 
             expect(resolution).to.deep.equal({ status: 'unreachable' });
             expect(promptStub.called).to.be.false;
+        });
+
+        it('includes the reason when a candidate password cannot be validated', async () => {
+            await credentialStore.setPassword('SN-001', 'stored-pw');
+            sinon.stub(deviceManager, 'validateDevicePassword').callsFake((device, password, port, onUnreachable) => {
+                onUnreachable?.('connect ECONNREFUSED 1.2.3.4:80');
+                return Promise.resolve('unreachable' as const);
+            });
+
+            const resolution = await userInputManager.resolveDevicePassword({ device: { host: '1.2.3.4' }, serialNumber: 'SN-001' });
+
+            expect(resolution).to.deep.equal({ status: 'unreachable', reason: 'connect ECONNREFUSED 1.2.3.4:80' });
+        });
+
+        it('includes the reason when a typed password cannot be validated', async () => {
+            sinon.stub(deviceManager, 'validateDevicePassword').callsFake((device, password, port, onUnreachable) => {
+                onUnreachable?.('connect ETIMEDOUT 1.2.3.4:80');
+                return Promise.resolve('unreachable' as const);
+            });
+            (sinon.stub(userInputManager as any, 'promptForDevicePassword') as any).resolves('typed-pw');
+
+            const resolution = await userInputManager.resolveDevicePassword({ device: { host: '1.2.3.4' }, serialNumber: undefined });
+
+            expect(resolution).to.deep.equal({ status: 'unreachable', reason: 'connect ETIMEDOUT 1.2.3.4:80' });
         });
 
         it('prompts when every candidate is rejected, then accepts a typed password', async () => {

@@ -690,6 +690,14 @@ describe('BrightScriptFileUtils ', () => {
             assert.isTrue(showErrorStub.calledOnce);
         });
 
+        it('includes the reason in the error shown when the device is unreachable', async () => {
+            userInputManager.resolveDevicePassword.resolves({ status: 'unreachable', reason: 'connect ECONNREFUSED 1.2.3.4:80' });
+
+            await localCommands.restartDevice('1.2.3.4');
+
+            assert.include(showErrorStub.firstCall.args[0], 'is unreachable (connect ECONNREFUSED 1.2.3.4:80).');
+        });
+
         it('always prompts for the device with the picker when no host is provided', async () => {
             await localCommands.restartDevice();
 

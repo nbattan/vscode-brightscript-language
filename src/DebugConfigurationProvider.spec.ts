@@ -1249,6 +1249,33 @@ describe('BrightScriptConfigurationProvider', () => {
             expect(threw?.message).to.contain('unreachable');
         });
 
+        it('puts the reason in the error when the device is unreachable', async () => {
+            sinon.stub(deviceManager, 'validateDevicePassword').callsFake((device, password, port, onUnreachable) => {
+                onUnreachable?.('connect ECONNREFUSED 127.0.0.1:8084');
+                return Promise.resolve('unreachable' as const);
+            });
+
+            let threw: Error | undefined;
+            try {
+                await callProcess({ password: '${promptForPassword}' }, { host: '127.0.0.1', password: 'some-pw', packagePort: 8084 }, undefined);
+            } catch (error) {
+                threw = error as Error;
+            }
+            expect(threw?.message).to.equal(`Debug session terminated: device '127.0.0.1' is unreachable (connect ECONNREFUSED 127.0.0.1:8084).`);
+        });
+
+        it('keeps the message free of parentheses when no reason is known', async () => {
+            sinon.stub(deviceManager, 'validateDevicePassword').resolves('unreachable');
+
+            let threw: Error | undefined;
+            try {
+                await callProcess({ password: '${promptForPassword}' }, { host: '1.2.3.4', password: 'some-pw' }, undefined);
+            } catch (error) {
+                threw = error as Error;
+            }
+            expect(threw?.message).to.equal(`Debug session terminated: device '1.2.3.4' is unreachable.`);
+        });
+
         it('prompts the user when every candidate is rejected, then accepts a typed password', async () => {
             const stub = sinon.stub(deviceManager, 'validateDevicePassword') as any;
             stub.onFirstCall().resolves('bad-password');
